@@ -36,10 +36,10 @@ func AuthRequest(disUrls ...string) gin.HandlerFunc {
 			}
 		}
 
-		if !match && c.Request.RequestURI != "/login" && c.Request.RequestURI != "/users/logined" {
+		if !match && c.Request.RequestURI != "/login" {
+			c.Abort()
 			c.Redirect(302, disUrls[0])
 		}
 
-		c.Next()
 	}
 }
