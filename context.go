@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 	"sync"
 
 	//"github.com/gin-contrib/sessions"
@@ -18,14 +19,17 @@ const (
 	errorFormat   = "[sessions] ERROR! %s\n"
 )
 
+// G -
 type G map[string]interface{}
 
+// Context -
 type Context struct {
 	*gin.Context
 	data     G
 	dataLock sync.RWMutex
 }
 
+// NewContext -
 func NewContext() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		s := &Context{Context: c, data: make(G), dataLock: sync.RWMutex{}}
@@ -33,6 +37,7 @@ func NewContext() gin.HandlerFunc {
 	}
 }
 
+// NewSession -
 func NewSession(opt ...session.Option) gin.HandlerFunc {
 	manage := session.NewManager(opt...)
 	return func(c *gin.Context) {
@@ -48,55 +53,62 @@ func NewSession(opt ...session.Option) gin.HandlerFunc {
 	}
 }
 
-// data
-func (self *Context) Get(key string) interface{} {
-	self.dataLock.RLock()
-	defer self.dataLock.RUnlock()
+// Get data
+func (c *Context) Get(key string) interface{} {
+	c.dataLock.RLock()
+	defer c.dataLock.RUnlock()
 
-	return self.data[key]
+	return c.data[key]
 }
 
-func (self *Context) Set(key string, val interface{}) {
-	self.dataLock.Lock()
-	if self.data == nil {
-		self.data = make(G)
+// Set -
+func (c *Context) Set(key string, val interface{}) {
+	c.dataLock.Lock()
+	if c.data == nil {
+		c.data = make(G)
 	}
-	self.data[key] = val
-	self.dataLock.Unlock()
+	c.data[key] = val
+	c.dataLock.Unlock()
 }
 
-func (self *Context) Data() G {
-	return self.data
+// Data -
+func (c *Context) Data() G {
+	return c.data
 }
 
-func (self *Context) Delete(key string) {
-	self.dataLock.Lock()
-	delete(self.data, key)
-	self.dataLock.Unlock()
+// Delete -
+func (c *Context) Delete(key string) {
+	c.dataLock.Lock()
+	delete(c.data, key)
+	c.dataLock.Unlock()
 }
 
-func (self *Context) Clear() {
-	self.data = make(G)
+// Clear -
+func (c *Context) Clear() {
+	c.data = make(G)
 }
 
-// sessions
-func (self *Context) Session() session.Store {
-	return self.MustGet(sessStoreKey).(session.Store) //sessions.Default(self.Context)
+// Session sessions
+func (c *Context) Session() session.Store {
+	return c.MustGet(sessStoreKey).(session.Store) //sessions.Default(c.Context)
 }
 
-func (self *Context) SessSet(key string, value interface{}) {
-	self.Session().Set(key, value)
-	//sessions.Default(self.Context).Set(key, value)
+// SessSet -
+func (c *Context) SessSet(key string, value interface{}) {
+	c.Session().Set(key, value)
+	//sessions.Default(c.Context).Set(key, value)
 }
 
-func (self *Context) SessGetValue(key string) (interface{}, bool) {
-	return self.Session().Get(key)
-	//return sessions.Default(self.Context).Get(key)
+// SessGetValue -
+func (c *Context) SessGetValue(key string) (interface{}, bool) {
+	return c.Session().Get(key)
+	//return sessions.Default(c.Context).Get(key)
 }
 
-func (self *Context) SessGet(key string, value interface{}) (err error) {
-	//tmp := sessions.Default(self.Context).Get(key)
-	tmp, has := self.Session().Get(key)
+// SessGet -
+func (c *Context) SessGet(key string, value interface{}) (err error) {
+	//tmp := sessions.Default(c.Context).Get(key)
+	tmp, has := c.Session().Get(key)
 
 	if tmp == nil || !has {
 		return fmt.Errorf("Can't found session value for %s", key)
@@ -115,42 +127,45 @@ func (self *Context) SessGet(key string, value interface{}) (err error) {
 	return
 }
 
-func (self *Context) SessDelete(key string) interface{} {
-	return self.Session().Delete(key)
+// SessDelete -
+func (c *Context) SessDelete(key string) interface{} {
+	return c.Session().Delete(key)
 }
 
-func (self *Context) SessSave() {
-	self.Session().Save()
-	//sessions.Default(self.Context).Save()
+// SessSave -
+func (c *Context) SessSave() {
+	c.Session().Save()
+	//sessions.Default(c.Context).Save()
 }
 
-func (self *Context) SessClear() error {
-	//return self.Session().Flush()
-	//sessions.Default(self.Context).Clear()
-	return self.MustGet(sessManageKey).(*session.Manager).Destroy(context.Background(), self.Writer, self.Request)
+// SessClear -
+func (c *Context) SessClear() error {
+	//return c.Session().Flush()
+	//sessions.Default(c.Context).Clear()
+	return c.MustGet(sessManageKey).(*session.Manager).Destroy(context.Background(), c.Writer, c.Request)
 }
 
-// message
+// JMessage message
 // Render JSON message
-func (self *Context) JMessage(code int, url, message string, v ...interface{}) {
+func (c *Context) JMessage(code int, url, message string, v ...interface{}) {
 	if len(v) > 0 {
 		message = fmt.Sprintf(message, v...)
 	}
 	msg := Msg{Code: code, Message: message, Url: url}
-	self.JSON(200, msg)
+	c.JSON(200, msg)
 }
 
-// Render HTML message
-func (self *Context) HMessage(code int, url, message string, v ...interface{}) {
+// HMessage Render HTML message
+func (c *Context) HMessage(code int, url, message string, v ...interface{}) {
 	if len(v) > 0 {
 		message = fmt.Sprintf(message, v...)
 	}
-	self.Set("msg", Msg{Code: code, Message: message, Url: url})
-	self.HTML(200, "layout/message", self.Data())
+	c.Set("msg", Msg{Code: code, Message: message, Url: url})
+	c.HTML(200, "layout/message", c.Data())
 }
 
-// get Datatable
-func (self *Context) DataTable(draw, total, datas interface{}) G {
+// DataTable get Datatable
+func (c *Context) DataTable(draw, total, datas interface{}) G {
 
 	return G{"draw": draw, "recordsTotal": total,
 		"recordsFiltered": total,
@@ -158,9 +173,16 @@ func (self *Context) DataTable(draw, total, datas interface{}) G {
 	}
 }
 
-// shortcut to get context
+// Default shortcut to get context
 func Default(c *gin.Context) *Context {
-	return c.MustGet(DefaultKey).(*Context)
+	ctx, ok := c.Get(DefaultKey)
+	if !ok {
+		s := &Context{Context: c, data: make(G), dataLock: sync.RWMutex{}}
+		c.Set(DefaultKey, s)
+		return s
+	}
+
+	return ctx.(*Context)
 }
 
 func getTypeOf(val interface{}) (typeName string) {
@@ -173,4 +195,41 @@ func getTypeOf(val interface{}) (typeName string) {
 	}
 
 	return
+}
+
+//
+// query value
+//
+func (c *Context) QueryIntDefault(key string, defaultValue int) int {
+	return int(c.QueryInt64Default(key, int64(defaultValue)))
+}
+
+func (c *Context) QueryInt64Default(key string, defaultValue int64) int64 {
+	value, _ := c.GetQuery(key)
+
+	if value != "" {
+		v, _ := strconv.ParseInt(value, 10, 64)
+		return v
+	}
+
+	return defaultValue
+}
+
+//
+// Param
+//
+func (c *Context) ParamInt64Default(key string, defaultValue int64) int64 {
+	value := c.Params.ByName(key)
+	v, _ := strconv.ParseInt(value, 10, 64)
+
+	return v
+}
+
+func (c *Context) ParamDefault(key, defaultValue string) string {
+	value := c.Params.ByName(key)
+	if value != "" {
+		return value
+	}
+
+	return defaultValue
 }
