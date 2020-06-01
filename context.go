@@ -25,14 +25,15 @@ type G map[string]interface{}
 // Context -
 type Context struct {
 	*gin.Context
-	data     G
+	data     *sync.Map
 	dataLock sync.RWMutex
 }
 
 // NewContext -
 func NewContext() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		s := &Context{Context: c, data: make(G), dataLock: sync.RWMutex{}}
+		data := new(sync.Map)
+		s := &Context{Context: c, data: data, dataLock: sync.RWMutex{}}
 		c.Set(DefaultKey, s)
 	}
 }
@@ -54,38 +55,37 @@ func NewSession(opt ...session.Option) gin.HandlerFunc {
 }
 
 // Get data
-func (c *Context) Get(key string) interface{} {
-	c.dataLock.RLock()
-	defer c.dataLock.RUnlock()
-
-	return c.data[key]
+func (c *Context) Get(key string) (interface{}, bool) {
+	return c.data.Load(key)
 }
 
 // Set -
-func (c *Context) Set(key string, val interface{}) {
-	c.dataLock.Lock()
+func (c *Context) Set(key string, value interface{}) {
 	if c.data == nil {
-		c.data = make(G)
+		c.data = new(sync.Map)
 	}
-	c.data[key] = val
-	c.dataLock.Unlock()
+
+	c.data.Store(key, value)
 }
 
 // Data -
-func (c *Context) Data() G {
-	return c.data
+func (c *Context) Data() (data map[interface{}]interface{}) {
+	data = make(map[interface{}]interface{})
+	c.data.Range(func(key, value interface{}) bool {
+		data[key] = value
+		return true
+	})
+	return data
 }
 
 // Delete -
 func (c *Context) Delete(key string) {
-	c.dataLock.Lock()
-	delete(c.data, key)
-	c.dataLock.Unlock()
+	c.data.Delete(key)
 }
 
 // Clear -
 func (c *Context) Clear() {
-	c.data = make(G)
+	c.data = new(sync.Map)
 }
 
 // Session sessions
@@ -177,7 +177,8 @@ func (c *Context) DataTable(draw, total, datas interface{}) G {
 func Default(c *gin.Context) *Context {
 	ctx, ok := c.Get(DefaultKey)
 	if !ok {
-		s := &Context{Context: c, data: make(G), dataLock: sync.RWMutex{}}
+		data := new(sync.Map)
+		s := &Context{Context: c, data: data, dataLock: sync.RWMutex{}}
 		c.Set(DefaultKey, s)
 		return s
 	}
@@ -200,10 +201,12 @@ func getTypeOf(val interface{}) (typeName string) {
 //
 // query value
 //
+// QueryIntDefault -
 func (c *Context) QueryIntDefault(key string, defaultValue int) int {
 	return int(c.QueryInt64Default(key, int64(defaultValue)))
 }
 
+// QueryInt64Default -
 func (c *Context) QueryInt64Default(key string, defaultValue int64) int64 {
 	value, _ := c.GetQuery(key)
 
@@ -218,6 +221,7 @@ func (c *Context) QueryInt64Default(key string, defaultValue int64) int64 {
 //
 // Param
 //
+// ParamInt64Default -
 func (c *Context) ParamInt64Default(key string, defaultValue int64) int64 {
 	value := c.Params.ByName(key)
 	v, _ := strconv.ParseInt(value, 10, 64)
@@ -225,6 +229,7 @@ func (c *Context) ParamInt64Default(key string, defaultValue int64) int64 {
 	return v
 }
 
+// ParamDefault -
 func (c *Context) ParamDefault(key, defaultValue string) string {
 	value := c.Params.ByName(key)
 	if value != "" {
@@ -232,4 +237,22 @@ func (c *Context) ParamDefault(key, defaultValue string) string {
 	}
 
 	return defaultValue
+}
+
+// ReadRequest read client's json data
+func (c *Context) ReadRequest(body interface{}) (req *Request, err error) {
+	defer c.Context.Request.Body.Close()
+
+	req, err = RequestReader(c.Context.Request.Body, body)
+	return
+}
+
+// WriteResponse write json to client
+func (c *Context) WriteResponse(code int, body interface{}, message string, v ...interface{}) {
+	c.JSON(200, ResponseWriter(code, fmt.Sprintf(message, v...), body))
+}
+
+// AuthFailed write auth failed message to client
+func (c *Context) AuthFailed() {
+	c.JSON(403, ResponseWriter(403, "authorization failed", nil))
 }
